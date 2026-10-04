@@ -1,0 +1,66 @@
+name: Update Release Status Badges
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  update-release-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release status repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+
+      - name: Checkout CAP_project.jl
+        uses: actions/checkout@v7
+        with:
+          repository: homalg-project/CAP_project.jl
+          ref: master
+          path: sources/CAP_project.jl
+          persist-credentials: false
+
+      - name: Checkout CategoricalTowers.jl
+        uses: actions/checkout@v7
+        with:
+          repository: homalg-project/CategoricalTowers.jl
+          ref: master
+          path: sources/CategoricalTowers.jl
+          persist-credentials: false
+
+      - name: Checkout HigherHomologicalAlgebra.jl
+        uses: actions/checkout@v7
+        with:
+          repository: homalg-project/HigherHomologicalAlgebra.jl
+          ref: master
+          path: sources/HigherHomologicalAlgebra.jl
+          persist-credentials: false
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v3
+        with:
+          version: '1.12'
+
+      - name: Generate release status badges
+        run: julia --startup-file=no dev/check_release_status.jl sources
+
+      - name: Commit changed badges
+        run: |
+          git add CAP_project.jl/badges CategoricalTowers.jl/badges HigherHomologicalAlgebra.jl/badges
+          git diff --cached --quiet && exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "chore: update release status badges" \
+            -m "CAP_project.jl: $(git -C sources/CAP_project.jl rev-parse HEAD)" \
+            -m "CategoricalTowers.jl: $(git -C sources/CategoricalTowers.jl rev-parse HEAD)" \
+            -m "HigherHomologicalAlgebra.jl: $(git -C sources/HigherHomologicalAlgebra.jl rev-parse HEAD)"
+          git push
