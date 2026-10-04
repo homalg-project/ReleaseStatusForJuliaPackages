@@ -10,5 +10,10 @@ The hourly GitHub Actions workflow checks every immediate subdirectory containin
 - [HigherHomologicalAlgebra.jl](https://github.com/homalg-project/HigherHomologicalAlgebra.jl)
 
 For each package, it compares the source version against the latest available release
-in Julia's General registry and writes badge data to
-`<monorepo>/badges/<package>.json`.
+in Julia's General registry. It also checks whether each direct dependency has an
+available release satisfying the package's `[compat]` bound. Badge data is written to:
+
+```text
+<monorepo>/<package>/release.json
+<monorepo>/<package>/dependencies/<dependency>.json
+```

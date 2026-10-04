@@ -55,7 +55,7 @@ jobs:
 
       - name: Commit changed badges
         run: |
-          git add CAP_project.jl/badges CategoricalTowers.jl/badges HigherHomologicalAlgebra.jl/badges
+          git add CAP_project.jl CategoricalTowers.jl HigherHomologicalAlgebra.jl
           git diff --cached --quiet && exit 0
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com

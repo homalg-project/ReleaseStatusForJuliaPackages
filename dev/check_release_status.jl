@@ -12,6 +12,15 @@ const MONOREPOS = [
     "HigherHomologicalAlgebra.jl",
 ]
 
+const STDLIBS = Set([
+    "ArgTools", "Artifacts", "Base64", "Dates", "DelimitedFiles", "Distributed",
+    "Downloads", "FileWatching", "Future", "InteractiveUtils", "LazyArtifacts",
+    "LibCURL", "LibGit2", "Libdl", "LinearAlgebra", "Logging", "Markdown", "Mmap",
+    "NetworkOptions", "Pkg", "Printf", "Profile", "Random", "REPL", "SHA",
+    "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics",
+    "SuiteSparse", "TOML", "Tar", "Test", "UUIDs", "Unicode",
+])
+
 function package_names(monorepo_path::AbstractString)
     packages = String[]
     for name in readdir(monorepo_path)
@@ -46,6 +55,25 @@ function latest_registered_version(registry, package::AbstractString)
     return isempty(non_yanked) ? nothing : maximum(non_yanked)
 end
 
+function latest_compatible_version(registry, package::AbstractString, compatibility)
+    package_entry = nothing
+    for entry in values(registry.pkgs)
+        if entry.name == package
+            package_entry = entry
+            break
+        end
+    end
+    package_entry === nothing && return nothing
+
+    version_spec = compatibility === nothing ? nothing : Pkg.Types.semver_spec(compatibility)
+    version_info = registered_version_info(registry, package_entry)
+    compatible = [
+        version for (version, info) in version_info
+        if !info.yanked && (version_spec === nothing || version in version_spec)
+    ]
+    return isempty(compatible) ? nothing : maximum(compatible)
+end
+
 function badge_json(; label::AbstractString, message::AbstractString, color::AbstractString)
     escape(value) = replace(value, "\"" => "\\\"")
     return "{\"schemaVersion\":1,\"label\":\"$(escape(label))\",\"message\":\"$(escape(message))\",\"color\":\"$(escape(color))\"}\n"
@@ -66,21 +94,66 @@ function status_badge(monorepo_path::AbstractString, registry, package::Abstract
     end
 end
 
+function dependency_badge(registry, dependency::AbstractString, compatibility)
+    dependency in STDLIBS && return badge_json(
+        label = "dependency",
+        message = "Julia standard library",
+        color = "brightgreen",
+    )
+
+    latest_v = latest_compatible_version(registry, dependency, compatibility)
+    if latest_v === nothing
+        requirement = compatibility === nothing ? "" : " matching $(compatibility)"
+        return badge_json(
+            label = "dependency",
+            message = "no released version$(requirement)",
+            color = "red",
+        )
+    end
+
+    return badge_json(
+        label = "dependency",
+        message = "v$(latest_v) available",
+        color = "brightgreen",
+    )
+end
+
+function remove_stale_directories(output_root::AbstractString, expected_directories)
+    for entry in readdir(output_root)
+        path = joinpath(output_root, entry)
+        isdir(path) && !(entry in expected_directories) && rm(path; recursive = true)
+    end
+end
+
 function write_badges(sources_root::AbstractString, registry, monorepo::AbstractString)
     monorepo_path = joinpath(sources_root, monorepo)
     packages = package_names(monorepo_path)
-    badges_dir = joinpath(@__DIR__, "..", monorepo, "badges")
-    mkpath(badges_dir)
-
-    expected_files = Set("$(package).json" for package in packages)
-    for file in readdir(badges_dir)
-        endswith(file, ".json") && !(file in expected_files) && rm(joinpath(badges_dir, file))
-    end
+    output_root = joinpath(@__DIR__, "..", monorepo)
+    mkpath(output_root)
+    remove_stale_directories(output_root, Set(packages))
 
     for package in packages
-        path = joinpath(badges_dir, "$(package).json")
-        write(path, status_badge(monorepo_path, registry, package))
-        println("Wrote $(path)")
+        project = TOML.parsefile(joinpath(monorepo_path, package, "Project.toml"))
+        package_dir = joinpath(output_root, package)
+        dependencies_dir = joinpath(package_dir, "dependencies")
+        mkpath(dependencies_dir)
+
+        release_path = joinpath(package_dir, "release.json")
+        write(release_path, status_badge(monorepo_path, registry, package))
+        println("Wrote $(release_path)")
+
+        dependencies = sort!(collect(keys(get(project, "deps", Dict()))))
+        compatibility = get(project, "compat", Dict())
+        expected_files = Set("$(dependency).json" for dependency in dependencies)
+        for file in readdir(dependencies_dir)
+            endswith(file, ".json") && !(file in expected_files) && rm(joinpath(dependencies_dir, file))
+        end
+
+        for dependency in dependencies
+            path = joinpath(dependencies_dir, "$(dependency).json")
+            write(path, dependency_badge(registry, dependency, get(compatibility, dependency, nothing)))
+            println("Wrote $(path)")
+        end
     end
 end
 
